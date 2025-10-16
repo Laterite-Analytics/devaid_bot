@@ -1,11 +1,13 @@
 # devaid.py  (Anvil Server Module, Full‑Python)
 import datetime as _dt
 import html
+import os
+import re
 from typing import List
 
 import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 
@@ -137,12 +139,10 @@ def format_tender_description_for_slack(tender):
 
     # Clean up and simplify the description
     raw_description = tender.get("description", "")
-    description = html.unescape(
-        raw_description.replace("<p>", "")
-        .replace("</p>", "\n")
-        .replace("<br />", "\n")
-        .strip()
-    )
+    soup = BeautifulSoup(raw_description, "html.parser")
+    text = soup.get_text()
+    description = html.unescape(text)
+    description = re.sub(r"\n{2,}", "\n", description).strip()
 
     amount = tender.get("amount", {})
     budget = amount.get("value")
@@ -174,7 +174,7 @@ def format_tender_description_for_slack(tender):
         f"• ⏰ *Deadline:* {deadline}\n"
         f"• 🚦 *Status:* {status}\n"
         f"──────────────────────────────\n"
-        f"*Summary:*\n{description[:700]}{'...' if len(description) > 700 else ''}\n\n"
+        f"*Summary:*\n{description[:1500]}{'...' if len(description) > 1500 else ''}\n\n"
         f"📧 *Contact:* {contact_text}\n"
     )
 
@@ -192,7 +192,7 @@ def format_tender_description_for_slack(tender):
 # ── Background task ------------------------------------------------------
 
 
-def fetch_new_tenders(days_back=7, page_size=100):
+def fetch_new_tenders(days_back=7, page_size=19):
     today = _dt.date.today()
     week_ago = today - _dt.timedelta(days=days_back)
 
@@ -238,15 +238,13 @@ def fetch_new_tenders(days_back=7, page_size=100):
         slack_message_text = format_tenders_for_slack(tenders)
     except requests.HTTPError as e:
         tenders = []
-        print(f"[ERROR] {e}")
         slack_message_text = (
             f"❌ Error fetching tenders. Please report to the analytics team. ({e})"
         )
 
-
+    print(slack_message_text)
     slack_post_message(slack_message_text[:4000])
 
-    # return tenders ids
     return [tenders[i]["id"] for i in range(len(tenders))]
 
 
@@ -263,6 +261,7 @@ def fetch_multiple_tenders_details(tender_ids: List[str]):
             continue
     return tender_details
 
+
 if __name__ == "__main__":
     new_tender_ids = fetch_new_tenders()
-    fetch_multiple_tenders_details(new_tender_ids)
+    fetch_multiple_tenders_details(new_tender_ids[:5])
