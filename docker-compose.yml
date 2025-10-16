@@ -10,4 +10,4 @@ services:
     volumes:
       - .:/app
     restart: unless-stopped
-    command: ["/entrypoint.sh"]
+    command: [ "python", "/app/devaid_scheduler.py" ]

@@ -17,11 +17,6 @@ RUN pip install --user --no-cache-dir -r requirements.txt
 # ── Stage 2: Final lightweight runtime ─────────────────────
 FROM python:3.11-slim
 
-# Install runtime dependencies like cron
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    cron \
- && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
 # Copy installed site-packages from builder
@@ -36,7 +31,3 @@ ENV PATH=/root/.local/bin:$PATH
 # Environment variables for runtime configuration
 ENV PYTHONUNBUFFERED=1 \
     TZ=UTC
-
-# Triggers the program every Tuesdays
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh

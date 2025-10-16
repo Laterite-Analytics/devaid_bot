@@ -3,4 +3,4 @@
 !devaid.py
 !requirements.txt
 !Dockerfile
-!entrypoint.sh
+!devaid_scheduler.py
