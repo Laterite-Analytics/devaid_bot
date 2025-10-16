@@ -1,0 +1,13 @@
+services:
+  devaid:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: devaid
+    environment:
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      DEVAID_API_KEY: ${DEVAID_API_KEY}
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    command: ["/entrypoint.sh"]
