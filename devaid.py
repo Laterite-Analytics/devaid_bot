@@ -48,6 +48,17 @@ countries = {
     "Peru": 109,
 }
 
+sectors = {
+    "Agriculture": 100,
+    "Education": 5,
+    "Energy": 6,
+    "Environment & NRM": 7,
+    "Gender": 9,
+    "Health": 11,
+    "Labour Market & Employment": 14,
+    "Micro-finance": 17,
+}
+
 
 # ------------------  low‑level helpers  ----------------------------------
 
@@ -166,15 +177,13 @@ def format_tender_description_for_slack(tender):
         f"• 🏢 *Organization:* {organization}\n"
         f"• 🌍 *Country:* {country}\n"
         f"• 🎯 *Sector:* {sector}\n"
-        f"• 📑 *Type:* {tender_type}\n"
-        f"• 🧩 *Eligibility:* {eligibility}\n"
         f"• 💰 *Budget:* {budget_str}\n"
         f"• 🤝 *Donor:* {donor}\n"
         f"• 📅 *Posted on:* {posted}\n"
         f"• ⏰ *Deadline:* {deadline}\n"
         f"• 🚦 *Status:* {status}\n"
         f"──────────────────────────────\n"
-        f"*Summary:*\n{description[:1500]}{'...' if len(description) > 1500 else ''}\n\n"
+        f"*Summary:*\n{description[:2000]}{'...' if len(description) > 2000 else ''}\n\n"
         f"📧 *Contact:* {contact_text}\n"
     )
 
@@ -192,7 +201,7 @@ def format_tender_description_for_slack(tender):
 # ── Background task ------------------------------------------------------
 
 
-def fetch_new_tenders(days_back=7, page_size=19):
+def fetch_new_tenders(days_back=7, page_size=50):
     today = _dt.date.today()
     week_ago = today - _dt.timedelta(days=days_back)
 
@@ -201,6 +210,10 @@ def fetch_new_tenders(days_back=7, page_size=19):
         "page": 1,
         "size": page_size,
         "filter": {
+            "keyword": {"searchedText": "survey | research | evaluation | monitoring",
+                        "searchedFields": ["title", "description", "documents"]},
+            "locations": list(countries.values()),
+            "sectors": list(sectors.values()),
             "postedFrom": str(week_ago),
             "postedTill": str(today),
             "statuses": [
@@ -211,30 +224,25 @@ def fetch_new_tenders(days_back=7, page_size=19):
                 10,
             ],
             # :[{"id":8,"name":"country programming","stage":{"id":"early_intelligence","name":"Early intelligence"}},{"id":9,"name":"formulation","stage":{"id":"early_intelligence","name":"Early intelligence"}},{"id":10,"name":"approval","stage":{"id":"early_intelligence","name":"Early intelligence"}},{"id":2,"name":"forecast","stage":{"id":"procurement","name":"Procurement"}},{"id":3,"name":"open","stage":{"id":"procurement","name":"Procurement"}},{"id":4,"name":"closed","stage":{"id":"procurement","name":"Procurement"}},{"id":5,"name":"shortlisted","stage":{"id":"procurement","name":"Procurement"}},{"id":6,"name":"awarded","stage":{"id":"procurement","name":"Procurement"}},{"id":7,"name":"cancelled","stage":{"id":"procurement","name":"Procurement"}},{"id":11,"name":"completion and evaluation","stage":{"id":"implementation","name":"Implementation"}}]
-            "locations": list(countries.values()),
-            "tenderTypes": [
-                2,
-                4,
-            ],
-            # filter for organizations only (not individuals) :[{"id":2,"name":"Organisation"},{"id":3,"name":"Individual"},{"id":4,"name":"Organisation & Individual"}]
+            "tenderTypes": [4],  # consulting services
+            "eligibilityAlias": "organisation",
             "budgetInEuroRange": {
                 "min": 50000,
                 "max": 20000000,
             },  # 50k to 20M EUR, 20M is the max allowed
-            "locationIsStrict": False,
-            # "sectors": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20], #all sectors
-            # sectorsIsStrict
-            # typesIsStrict
+            # "locationIsStrict": false,
+            # "sectorsIsStrict": false,
+            # "typesIsStrict": false,
         },
     }
-    # TODO faire des filtres avec la BDC team: keywords? sectors?
     try:
         # Fetch tenders
         response = requests.post(
             f"{BASE_URL}/tenders/search", headers=headers, json=body
         )
         tenders = _json_ok(response).get("items", [])
-        # Build slack message text
+        print(f"Fetched {len(tenders)} new tenders from DevAid.")
+        # Build Slack message text
         slack_message_text = format_tenders_for_slack(tenders)
     except requests.HTTPError as e:
         tenders = []
@@ -243,7 +251,6 @@ def fetch_new_tenders(days_back=7, page_size=19):
         )
 
     print(slack_message_text)
-    slack_post_message(slack_message_text[:4000])
 
     return [tenders[i]["id"] for i in range(len(tenders))]
 
@@ -264,4 +271,4 @@ def fetch_multiple_tenders_details(tender_ids: List[str]):
 
 if __name__ == "__main__":
     new_tender_ids = fetch_new_tenders()
-    fetch_multiple_tenders_details(new_tender_ids[:5])
+    fetch_multiple_tenders_details(new_tender_ids)
