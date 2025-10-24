@@ -176,17 +176,26 @@ def find_tender_requirements(tender_url: str):
       - a summary of requirements
       - the actual link(s) where they were found.
     """
-    query = (
-        f"You are an expert in public tenders. Starting from the tender page {tender_url}, "
-        f"search the organization’s website and any related sources to find **submission requirements** — "
-        f"including eligibility criteria, required documentation, technical and financial qualifications, timeline and deadlines. "
-        f"Summarize them in bullet points. "
-        f"At the end, provide the most relevant and authoritative link(s) "
-        f"where these requirements can be verified. "
-        f"Format the response as:\n\n"
-        f"Requirements:\n- <requirement 1>\n- <requirement 2>\n...\n\n"
-        f"Source(s): <one or more URLs>"
-    )
+    query = f"""
+        You are an expert in public tenders. Starting from the tender page {tender_url},
+        search the organization's website and any related sources to identify **submission requirements** —
+        including eligibility criteria, required documentation, technical and financial qualifications, timelines, and deadlines.
+        
+        Summarize your findings in concise bullet points.
+        
+        At the end, provide the most relevant and authoritative link(s)
+        where these requirements can be verified, formatted as Slack links in the form `<{{url}}|display name>`.
+        
+        Format your response as:
+        
+        Requirements:
+        - <requirement 1>
+        - <requirement 2>
+        ...
+        
+        Source(s):
+        <https://example.com|Organization Website>
+        """
     response = client.responses.create(
         model="gpt-4.1",
         tools=[{"type": "web_search"}],

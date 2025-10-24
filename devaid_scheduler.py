@@ -14,9 +14,9 @@ def job():
     devaid.fetch_multiple_tenders_details(new_tender_ids[:5])
 
 
-schedule.every(5).minutes.do(job)  # for testing
-# for day in ["monday", "tuesday", "wednesday", "thursday", "friday"]:
-#     getattr(schedule.every(), day).at("09:00").do(job)
+# schedule.every(5).minutes.do(job)  # for testing
+for day in ["monday", "tuesday", "wednesday", "thursday", "friday"]:
+    getattr(schedule.every(), day).at("09:00").do(job)
 
 while True:
     schedule.run_pending()
