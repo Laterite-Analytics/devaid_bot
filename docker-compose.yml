@@ -5,7 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: devaid
     environment:
-      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_CHANNEL_ID: ${SLACK_CHANNEL_ID}
       DEVAID_API_KEY: ${DEVAID_API_KEY}
     volumes:
       - .:/app
