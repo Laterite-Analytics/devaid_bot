@@ -8,6 +8,7 @@ services:
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
       SLACK_CHANNEL_ID: ${SLACK_CHANNEL_ID}
       DEVAID_API_KEY: ${DEVAID_API_KEY}
+      PYTHONUNBUFFERED: "1"
     volumes:
       - .:/app
     restart: unless-stopped
