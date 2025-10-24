@@ -45,6 +45,15 @@ sectors = {
     "Health": 11,
     "Labour Market & Employment": 14,  # HR & Employment
     # "Micro-finance": 17,
+    "Financial Services & Audit": 92,
+    "Food systems and Livelihoods": 8,
+    "Monitoring & Evaluation": 30,
+    "Research & Innovation": 87,
+    "Social development": 22,
+    "Statistics & Data": 43,
+    "Urban development": 34,
+    "Water & Sanitation": 48,
+    "Youth and Children": 27,
 }
 
 # ── Slack connection ────────────────────────────────────────────────────
