@@ -1,5 +1,6 @@
 # devaid.py  (Anvil Server Module, Full‑Python)
 import html
+import json
 import os
 import re
 from datetime import timedelta, date
@@ -133,6 +134,46 @@ def _json_ok(r, *, debug=False):
     return r.json()
 
 
+def extract_content_from_answer(answer: str):
+    """
+    Extracts both the parsed JSON object and accompanying Markdown text
+    from an LLM answer.
+
+    Returns:
+        (parsed_json: dict or None, markdown_text: str)
+    """
+    parsed_json = None
+    markdown_text = answer.strip()
+
+    try:
+        # Try to find JSON inside a fenced code block
+        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", answer, re.DOTALL)
+        if match:
+            json_str = match.group(1).strip()
+            parsed_json = json.loads(json_str)
+
+            # Everything before + after the code block is considered markdown
+            start, end = match.span()
+            markdown_text = (answer[:start] + answer[end:]).strip()
+
+        else:
+            # Fallback: look for the first JSON-like block
+            match = re.search(r"(\{.*\})", answer, re.DOTALL)
+            if match:
+                json_str = match.group(1).strip()
+                parsed_json = json.loads(json_str)
+
+                # Remove JSON from the Markdown text
+                markdown_text = re.sub(r"(\{.*\})", "", answer, flags=re.DOTALL).strip()
+
+    except json.JSONDecodeError as e:
+        print(f"[Error] Invalid JSON: {e}")
+    except Exception as e:
+        print(f"[Error extracting JSON]: {e}")
+
+    return parsed_json, markdown_text
+
+
 def fetch_tender_details(tender_id):
     response = requests.get(
         f"{BASE_URL}/tenders/{tender_id}", headers=headers, timeout=TIMEOUT
@@ -207,6 +248,131 @@ def find_tender_requirements(tender_url: str):
     return output_text
 
 
+def simple_go_no_go_analysis(tender_info):
+    """
+    Automated Go/No-Go analysis aligned with Laterite's BD decision framework,
+    refined using phrasing and risk logic from the LateriteAI prompt.
+    """
+    query = f"""
+    You are an expert analyst on *Laterite’s Business Development (BD) team*.
+    
+    Laterite operates across *Rwanda, Ethiopia, Tanzania, Uganda, Kenya, Sierra Leone, Peru*,
+    and occasionally *the Netherlands* (for non-survey work).
+    
+    Your task is to assess whether Laterite should bid on the following opportunity.
+    
+    Tender information:
+    {tender_info}
+    
+    ---------------------------------------------------------
+    🎯 OBJECTIVE
+    ---------------------------------------------------------
+    Make a structured analysis that mimics the decision process used by Laterite’s BD team.
+    You must balance *strategic alignment, feasibility, and risk awareness*.
+    
+    Use sound judgment and a conservative approach — if critical information is missing,
+    mark the corresponding criterion as “Maybe (0.5)” or “No (0)”.
+    
+    ---------------------------------------------------------
+    🧩 DECISION FRAMEWORK
+    ---------------------------------------------------------
+    Rank each of the following criteria using the scoring system:
+    • Yes = 1
+    • Maybe = 0.5
+    • No = 0
+    
+    For each, provide a one-sentence rationale, to be included in the final rationale within the json output.
+    
+    1️⃣ **Thematic Area Fit**
+       - Does the opportunity align with Laterite’s research areas (impact evaluations, data systems, surveys, monitoring & evaluation)?
+       - Is it feasible for the country teams involved?
+    
+    2️⃣ **Available Expertise**
+       - Does Laterite have the in-house skills and experience required?
+       - Would we need to partner to be competitive?
+    
+    3️⃣ **Strategic Alignment**
+       - Is the project strategic for Laterite (e.g., high-value client, strengthens our portfolio, builds credibility in a growth sector)?
+       - Does it fit our medium-term BD priorities?
+    
+    4️⃣ **Budget & Timeline Realism**
+       - Is the budget realistic given the expected scope of work?
+       - Is the timeline feasible for a strong submission?
+       - Flag red flags (e.g., budget <150k USD, local currency budgets, very short deadlines).
+    
+    5️⃣ **Application Process / LOE**
+       - Do we have sufficient time and internal capacity to prepare the proposal or EOI?
+       - Note any red flags: pay-to-apply, hard-copy submissions, or unclear requirements.
+    
+    ---------------------------------------------------------
+    ⚖️ RISK-INFORMED DECISIONING
+    ---------------------------------------------------------
+    You must weigh:
+    (a) Fit (sector, methods, geography),
+    (b) Eligibility/Compliance (e.g., registration, past performance),
+    (c) Budget & timeline realism, and
+    (d) Risk level.
+    
+    Guidelines:
+    • If Eligibility = No or Risk = High with no credible mitigation → recommend *NO-GO*.
+    • If opportunity is strong but depends on solvable issues (e.g., needing a partner, clarifying scope) → recommend *GO (conditional)*.
+    • Otherwise, recommend *GO*.
+    
+    ---------------------------------------------------------
+    💡 SCORING & DECISION LOGIC
+    ---------------------------------------------------------
+    Compute:
+    - total_score = sum of all five criteria (max = 5).
+    - Map to decisions:
+      • total_score ≥ 4.5 → "GO"
+      • 3.5 ≤ total_score < 4.5 → "GO (conditional)"
+      • total_score < 3.5 → "NO-GO"
+    
+    Confidence:
+    - Derive from how consistent and well-supported the evidence is.
+    - High confidence (≥0.85) if information is clear and aligns strongly with Laterite’s profile.
+    - Medium (0.6–0.8) if partial or uncertain data.
+    - Low (<0.6) if key information missing.
+    
+    ---------------------------------------------------------
+    📄 OUTPUT FORMAT
+    ---------------------------------------------------------
+    Return a **single JSON object**, with this structure:
+    
+    {{
+      "decision": "GO (conditional)",  # GO | GO (conditional) | NO-GO
+      "confidence": 0.82,
+      "rationale": "The opportunity fits Laterite’s methods and sectors but budget and timeline are tight.",
+      "scores": {{
+        "thematic_area_fit": 1,
+        "available_expertise": 1,
+        "strategic_alignment": 0.5,
+        "budget_timeline_realism": 0.5,
+        "application_process": 0.5
+      }},
+      "total_score": 3.5,
+      "key_criteria": {{
+        "geographic_fit": "Yes",
+        "sector_fit": "Yes",
+        "eligibility": "Partial",
+        "risk_level": "Medium"
+      }}
+    }}
+    Include a short markdown text in addition to the JSON object, it will be parsed programmatically.
+    
+    Notes:
+    • Be explicit in rationale about any uncertainties or assumptions.
+    • Use online search to assess donor/organization reputation.
+    • Be concise but clear — this output feeds directly into Slack.
+    """
+    response = client.responses.create(
+        model="gpt-4.1",
+        tools=[{"type": "web_search"}],
+        input=query,
+    )
+    return extract_content_from_answer(response.output_text)
+
+
 # ------------------  message formatting  ----------------------------------
 
 
@@ -266,25 +432,80 @@ def format_tender_description_for_slack(tender_info):
         f"• 📅 *Posted on:* {posted}\n"
         f"• ⏰ *Deadline:* {deadline}\n"
         f"• 🚦 *Status:* {status}\n"
-
-        f"──────────────────────────────\n"
-        f"📧 *Contact:* {contact_text}\n"
-    )
+        f"\n──────────────────────────────\n"
+        f"📧 *Contact:* {contact_text}\n")
+    # Add URL and footer
     if url:
         slack_core_message += f"🔗 *More info:* <{url}|Open Tender Page>\n"
-    slack_core_message += (
-        f"_Provided by the BDC Tender Fetcher Bot — {date.today():%d %b %Y}_ 🤖"
-    )
+    slack_core_message += f"_Provided by the BDC Tender Fetcher Bot — {date.today():%d %b %Y}_ 🤖"
 
     slack_summary = f"*Summary:*\n{description[:5000]}{'...' if len(description) > 5000 else ''}\n\n"
 
     requirements_summary = tender_info.get("requirements_summary", "No specific requirements found.")
     slack_requirements = f"*Application Requirements:*\n{requirements_summary}\n"
 
-    return slack_core_message, slack_summary, slack_requirements
+    slack_gonogo_message = ""
+    go_no_go = tender_info.get("go_no_go_analysis")
+    go_no_go_text = go_no_go["text"] if go_no_go else ""
+    go_no_go_json = go_no_go["analysis_json"] if go_no_go else ""
+    if go_no_go_json:
+        decision = go_no_go.get("decision", "N/A").upper()
+        confidence = go_no_go.get("confidence")
+        confidence_pct = f"{confidence * 100:.0f}%" if isinstance(confidence, (int, float)) else "N/A"
+        rationale = go_no_go.get("rationale", "No rationale provided.")
+        criteria = go_no_go.get("key_criteria", {})
+        scores = go_no_go.get("scores", {})
+        total_score = go_no_go.get("total_score")
+
+        # Emoji map for decision
+        emoji_map = {
+            "GO": "✅",
+            "GO (CONDITIONAL)": "⚠️",
+            "NO-GO": "❌",
+        }
+        emoji = emoji_map.get(decision, "❓")
+
+        # Emoji map for scores
+        def score_emoji(value):
+            if value == 1:
+                return ":large_green_circle:"
+            elif value == 0.5:
+                return ":large_yellow_circle:"
+            elif value == 0:
+                return ":red_circle:"
+            else:
+                return ":white_circle:"
+
+        slack_gonogo_message += (
+            f"📊 *Go/No-Go Analysis*\n"
+            f"• *Decision:* {emoji} {decision}\n"
+            f"• *Confidence:* {confidence_pct}\n"
+            f"• *Rationale:* {rationale}\n"
+        )
+
+        # Add detailed scoring breakdown if available
+        if scores:
+            slack_gonogo_message += "• *Detailed Scores:*\n"
+            for key, val in scores.items():
+                label = key.replace("_", " ").capitalize()
+                slack_gonogo_message += f"   • {score_emoji(val)} {label}: {val}\n"
+
+        if total_score is not None:
+            slack_gonogo_message += f"• *Total Score:* *{total_score:.1f} / 5.0*\n"
+
+        # Add key criteria (fit, eligibility, risk)
+        if criteria:
+            slack_gonogo_message += "• *Key Criteria:*\n"
+            for key, value in criteria.items():
+                label = key.replace("_", " ").capitalize()
+                slack_gonogo_message += f"   • {label}: {value}\n"
+
+        slack_gonogo_message += go_no_go_text
+
+    return slack_core_message, slack_summary, slack_requirements, slack_gonogo_message
 
 
-# ── Background task ------------------------------------------------------
+# ── Main task ------------------------------------------------------
 
 
 def fetch_new_tenders(page_size=50):
@@ -341,7 +562,7 @@ def fetch_new_tenders(page_size=50):
     return [tenders[i]["id"] for i in range(len(tenders))]
 
 
-def fetch_multiple_tenders_details(tender_ids: List[str], *, thread_ts: Optional[str] = None):
+def fetch_multiple_tenders_details(tender_ids: List[str]):
     tender_details = {}
     for tender_id in tender_ids:
         # --------- TENDER INFORMATION COLLECTION ---------
@@ -362,6 +583,9 @@ def fetch_multiple_tenders_details(tender_ids: List[str], *, thread_ts: Optional
                     info.setdefault("document_details", []).append(document)
                 else:
                     print(f"  [No document found for ID {document_info.get('id')}]")
+            # Simple GO/NO-GO analysis
+            analysis_json, analysis_text = simple_go_no_go_analysis(info)
+            info["go_no_go_analysis"] = {"analysis_json": analysis_json, "text": analysis_text}
         except Exception as e:
             print(f"  [ERROR fetching details for {tender_id}: {e}]")
             continue
@@ -369,27 +593,31 @@ def fetch_multiple_tenders_details(tender_ids: List[str], *, thread_ts: Optional
         tender_details[tender_id] = info
 
         # --------- SLACK MESSAGE SENDING ---------
-        slack_core_message, slack_summary, slack_requirements = format_tender_description_for_slack(info)
-        try:
-            core_ts = slack_post_message(slack_core_message)
-            slack_post_message(slack_summary, thread_ts=core_ts)
-            slack_post_message(slack_requirements, thread_ts=core_ts)
-        except Exception as e:
-            print(f"  [ERROR sending Slack message for {tender_id}: {e}]")
-            continue
-
-        try:
-            for document in info.get("document_details", []):
-                data = document.get("data")
-                filename = document.get("filename")
-                slack_upload_file(
-                    file_bytes=data,
-                    filename=filename,
-                    title=filename,
-                )
-        except Exception as e:
-            print(f"  [ERROR uploading document to Slack for {tender_id}: {e}]")
-            continue
+        slack_core_message, slack_summary, slack_requirements, slack_go_no_go = format_tender_description_for_slack(
+            info)
+        print(slack_core_message)
+        # try:
+        #     core_ts = slack_post_message(slack_core_message)
+        #     slack_post_message(slack_summary, thread_ts=core_ts)
+        #     slack_post_message(slack_requirements, thread_ts=core_ts)
+        #     slack_post_message(slack_go_no_go, thread_ts=core_ts)
+        # except Exception as e:
+        #     print(f"  [ERROR sending Slack message for {tender_id}: {e}]")
+        #     continue
+        #
+        # try:
+        #     for document in info.get("document_details", []):
+        #         data = document.get("data")
+        #         filename = document.get("filename")
+        #         slack_upload_file(
+        #             file_bytes=data,
+        #             filename=filename,
+        #             title=filename,
+        #             thread_ts=core_ts
+        #         )
+        # except Exception as e:
+        #     print(f"  [ERROR uploading document to Slack for {tender_id}: {e}]")
+        #     continue
 
     return tender_details
 
