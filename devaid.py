@@ -596,28 +596,28 @@ def fetch_multiple_tenders_details(tender_ids: List[str]):
         slack_core_message, slack_summary, slack_requirements, slack_go_no_go = format_tender_description_for_slack(
             info)
         print(slack_core_message)
-        # try:
-        #     core_ts = slack_post_message(slack_core_message)
-        #     slack_post_message(slack_summary, thread_ts=core_ts)
-        #     slack_post_message(slack_requirements, thread_ts=core_ts)
-        #     slack_post_message(slack_go_no_go, thread_ts=core_ts)
-        # except Exception as e:
-        #     print(f"  [ERROR sending Slack message for {tender_id}: {e}]")
-        #     continue
-        #
-        # try:
-        #     for document in info.get("document_details", []):
-        #         data = document.get("data")
-        #         filename = document.get("filename")
-        #         slack_upload_file(
-        #             file_bytes=data,
-        #             filename=filename,
-        #             title=filename,
-        #             thread_ts=core_ts
-        #         )
-        # except Exception as e:
-        #     print(f"  [ERROR uploading document to Slack for {tender_id}: {e}]")
-        #     continue
+        try:
+            core_ts = slack_post_message(slack_core_message)
+            slack_post_message(slack_summary, thread_ts=core_ts)
+            slack_post_message(slack_requirements, thread_ts=core_ts)
+            slack_post_message(slack_go_no_go, thread_ts=core_ts)
+        except Exception as e:
+            print(f"  [ERROR sending Slack message for {tender_id}: {e}]")
+            continue
+
+        try:
+            for document in info.get("document_details", []):
+                data = document.get("data")
+                filename = document.get("filename")
+                slack_upload_file(
+                    file_bytes=data,
+                    filename=filename,
+                    title=filename,
+                    thread_ts=core_ts
+                )
+        except Exception as e:
+            print(f"  [ERROR uploading document to Slack for {tender_id}: {e}]")
+            continue
 
     return tender_details
 
