@@ -11,7 +11,7 @@ WORKDIR /app
 COPY requirements.txt ./
 
 # Install dependencies in a temporary build layer
-RUN pip install --user --no-cache-dir -r requirements.txt
+RUN pip install --prefix=/install --no-cache-dir -r requirements.txt
 
 
 # ── Stage 2: Final lightweight runtime ─────────────────────
@@ -20,13 +20,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy installed site-packages from builder
-COPY --from=builder /root/.local /root/.local
+COPY --from=builder /install /usr/local
 
 # Add the app code
 COPY devaid.py ./devaid.py
-
-# Ensure local installs are in path
-ENV PATH=/root/.local/bin:$PATH
 
 # Environment variables for runtime configuration
 ENV PYTHONUNBUFFERED=1 \

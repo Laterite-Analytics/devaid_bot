@@ -262,7 +262,7 @@ def simple_go_no_go_analysis(tender_info):
     Your task is to assess whether Laterite should bid on the following opportunity.
     
     Tender information:
-    {tender_info}
+    {str(tender_info)[:10000]}  # truncate to fit token limits
     
     ---------------------------------------------------------
     🎯 OBJECTIVE
@@ -572,6 +572,9 @@ def fetch_multiple_tenders_details(tender_ids: List[str]):
             # Tenders application requirements using LLM
             requirements = find_tender_requirements(info.get("url", ""))
             info["requirements_summary"] = requirements if requirements else {}
+            # Simple GO/NO-GO analysis
+            analysis_json, analysis_text = simple_go_no_go_analysis(info)
+            info["go_no_go_analysis"] = {"analysis_json": analysis_json, "text": analysis_text}
             # PDF Documents for that tender
             for document_info in info.get("documents", []):
                 try:
@@ -583,9 +586,6 @@ def fetch_multiple_tenders_details(tender_ids: List[str]):
                     info.setdefault("document_details", []).append(document)
                 else:
                     print(f"  [No document found for ID {document_info.get('id')}]")
-            # Simple GO/NO-GO analysis
-            analysis_json, analysis_text = simple_go_no_go_analysis(info)
-            info["go_no_go_analysis"] = {"analysis_json": analysis_json, "text": analysis_text}
         except Exception as e:
             print(f"  [ERROR fetching details for {tender_id}: {e}]")
             continue
