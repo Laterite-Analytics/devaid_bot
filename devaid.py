@@ -207,6 +207,36 @@ def get_document_for_tender(tender_id, document_info):
     }
 
 
+def format_url_text(text: str) -> str:
+    """
+    Convert Markdown links to Slack format (<url|text>)
+    and remove duplicate links, keeping only the last occurrence.
+    """
+    # Step 1. Convert Markdown links [text](url) → <url|text>
+    markdown_pattern = r'\[\s*([^\]]+)\s*\]\(\s*([^)]+)\s*\)'
+    text = re.sub(markdown_pattern, r'<\2|\1>', text)
+
+    # Step 2. Find all Slack-style links
+    slack_pattern = r'<([^|>]+)\|([^>]+)>'
+    matches = list(re.finditer(slack_pattern, text))
+
+    # Step 3. Identify which URLs to keep (only the last occurrence)
+    last_seen = {m.group(1): i for i, m in enumerate(matches)}
+
+    # Step 4. Remove duplicates while preserving order
+    keep_urls = set()
+    result_parts = []
+    for i, m in enumerate(matches):
+        url, display = m.groups()
+        if last_seen[url] == i:  # This is the last occurrence
+            keep_urls.add(url)
+        else:
+            # Remove earlier duplicates by deleting them from text
+            text = text.replace(m.group(0), "", 1)
+
+    return text.strip()
+
+
 def find_tender_requirements(tender_url: str):
     """
     Use an LLM with web search capability to find and summarize
@@ -224,8 +254,10 @@ def find_tender_requirements(tender_url: str):
         
         Summarize your findings in concise bullet points.
         
-        At the end, provide the most relevant and authoritative link(s)
-        where these requirements can be verified, formatted as Slack links in the form `<{{url}}|display name>`.
+        You are a background agent.
+        Do not message the user.
+        If a source is unavailable, continue reasoning and searching nearby context to infer the answer.
+        Always return the best possible synthesis.
         
         Format your response as:
         
@@ -244,6 +276,7 @@ def find_tender_requirements(tender_url: str):
         timeout=TIMEOUT,
     )
     output_text = response.output_text
+    output_text = format_url_text(output_text)
 
     return output_text
 
@@ -337,7 +370,7 @@ def simple_go_no_go_analysis(tender_info):
     ---------------------------------------------------------
     📄 OUTPUT FORMAT
     ---------------------------------------------------------
-    Return a **single JSON object**, with this structure:
+    You MUST return a **JSON object**, with this structure:
     
     {{
       "decision": "GO (conditional)",  # GO | GO (conditional) | NO-GO
@@ -358,7 +391,9 @@ def simple_go_no_go_analysis(tender_info):
         "risk_level": "Medium"
       }}
     }}
-    Include a short markdown text in addition to the JSON object, it will be parsed programmatically.
+    The JSON object must be valid and parsable (within ```json ... ``` code fences).
+    You can include a short markdown text in addition after the JSON object.
+    Do not include any links or references within your answer.
     
     Notes:
     • Be explicit in rationale about any uncertainties or assumptions.
@@ -369,8 +404,8 @@ def simple_go_no_go_analysis(tender_info):
         model="gpt-4.1",
         tools=[{"type": "web_search"}],
         input=query,
-    )
-    return extract_content_from_answer(response.output_text)
+    ).output_text
+    return extract_content_from_answer(response)
 
 
 # ------------------  message formatting  ----------------------------------
@@ -449,13 +484,13 @@ def format_tender_description_for_slack(tender_info):
     go_no_go_text = go_no_go["text"] if go_no_go else ""
     go_no_go_json = go_no_go["analysis_json"] if go_no_go else ""
     if go_no_go_json:
-        decision = go_no_go.get("decision", "N/A").upper()
-        confidence = go_no_go.get("confidence")
+        decision = go_no_go_json.get("decision", "N/A").upper()
+        confidence = go_no_go_json.get("confidence")
         confidence_pct = f"{confidence * 100:.0f}%" if isinstance(confidence, (int, float)) else "N/A"
-        rationale = go_no_go.get("rationale", "No rationale provided.")
-        criteria = go_no_go.get("key_criteria", {})
-        scores = go_no_go.get("scores", {})
-        total_score = go_no_go.get("total_score")
+        rationale = go_no_go_json.get("rationale", "No rationale provided.")
+        criteria = go_no_go_json.get("key_criteria", {})
+        scores = go_no_go_json.get("scores", {})
+        total_score = go_no_go_json.get("total_score")
 
         # Emoji map for decision
         emoji_map = {
